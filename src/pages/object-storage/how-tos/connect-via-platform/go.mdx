@@ -1,0 +1,285 @@
+import Layout from "@/components/Layout";
+import Button from "@/components/Common/button";
+import Section from "@/components/Common/section";
+import Alert from "@/components/Common/alert";
+import Tabs from "@/components/Common/tab";
+import Step from "@/components/Common/step";
+import Card from "@/components/Common/card";
+import Important from "@/components/Common/important";
+import Highlight from "@/components/Common/highlight";
+import Link from "next/link";
+import NextPage from "@/components/Common/nextpage";
+
+import Head from "next/head";
+
+<Layout>
+<Head>
+<title>مستندات اتصال به Object Storage در go - لیارا</title>
+<meta property="og:title" content="مستندات خدمات رایانش ابری لیارا" />
+<meta property="og:description" content="مستندات مربوط به اتصال به فضای ذخیره‌سازی ابری یا Object Storage با AWS SDK S3 در go در لیارا"  />
+<meta property="og:image" content="https://files.liara.ir/liara/logos/liara-poster.jpg" />
+</Head>
+# اتصال به فضای ذخیره‌سازی ابری در برنامه‌های go
+<hr className="mb-2" />
+
+برای استفاده از Object Storage در برنامه‌های go، بایستی پکیج‌های مورد نیاز را با اجرای دستورات زیر، نصب کنید:
+<div className="h-2" />
+<div dir='ltr'>
+    <Highlight className="bash">
+        {`go get github.com/aws/aws-sdk-go-v2/aws 
+go get github.com/aws/aws-sdk-go-v2/config
+go get github.com/aws/aws-sdk-go-v2/service/s3`}
+    </Highlight>
+</div>
+<div className="h-2" />
+
+پس از آن، کافیست تا طبق <a href="/object-storage/how-tos/create-key" className="text-[#2196f3] ">مستندات ایجاد کلید</a>، یک کلید جدید برای باکت خود بسازید.
+اطلاعات مربوط به ENDPOINT و نام باکت نیز در صفحه **تنظیمات**، در بخش **دسترسی با SDK**، 
+برای شما قرار گرفته است.
+در نهایت نیز، بایستی 
+اطلاعات مربوط به Object Storage خود را 
+به متغیرهای محیطی برنامه خود، اضافه کنید؛ به عنوان مثال:
+
+<div className="h-2" />
+<div dir='ltr'>
+    <Highlight className="bash">
+        {`LIARA_ENDPOINT=https://<Liara Bucket Endpoint>
+LIARA_BUCKET_NAME=<Bucket Name>
+LIARA_ACCESS_KEY=<Access Key>
+LIARA_SECRET_KEY=<Secret Key>`}
+    </Highlight>
+</div>
+<div className="h-2" />
+
+تمامی کارها انجام شده است و می‌توانید از Object Storage در برنامه خود، استفاده کنید؛
+در ادامه، یک قطعه کد نمونه برای‌تان قرار گرفته است که عملیات مختلف را روی فایل در باکت در برنامه go انجام می‌دهد:
+
+<div className="h-2" />
+<div dir='ltr'>
+    <Highlight className="go">
+        {`package main
+
+import (
+    "bytes"
+    "context"
+    "fmt"
+    "log"
+    "os"
+    "time"
+
+    "github.com/aws/aws-sdk-go-v2/aws"
+    "github.com/aws/aws-sdk-go-v2/config"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+    "github.com/joho/godotenv"
+)
+
+// uploadUsingS3 uploads a file to the specified S3-compatible storage.
+func uploadUsingS3(fileContent *bytes.Reader, fileName string) (string, error) {
+    err := godotenv.Load()
+    if err != nil {
+        log.Fatal("Error loading .env file")
+    }
+
+    cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+    if err != nil {
+        return "", err
+    }
+
+    // Define AWS credentials and bucket information
+    awsAccessKeyID := os.Getenv("LIARA_ACCESS_KEY")
+    awsSecretAccessKey := os.Getenv("LIARA_SECRET_KEY")
+    endpoint := os.Getenv("LIARA_ENDPOINT")
+    bucketName := os.Getenv("LIARA_BUCKET_NAME")
+
+    // Initialize S3 client with custom configuration
+    cfg.Credentials = aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+        return aws.Credentials{
+            AccessKeyID:     awsAccessKeyID,
+            SecretAccessKey: awsSecretAccessKey,
+        }, nil
+    })
+    cfg.BaseEndpoint = aws.String(endpoint)
+
+    client := s3.NewFromConfig(cfg)
+
+    // Specify the destination key in the bucket
+    destinationKey := "uploads/" + fileName
+
+    // Use the S3 client to upload the file
+    _, err = client.PutObject(context.TODO(), &s3.PutObjectInput{
+        Bucket: aws.String(bucketName),
+        Key:    aws.String(destinationKey),
+        Body:   fileContent,
+    })
+    if err != nil {
+        return "", err
+    }
+
+    // Generate a permanent link
+    permanentLink := fmt.Sprintf("%s/%s/%s", endpoint, bucketName, destinationKey)
+
+    return permanentLink, nil
+}
+
+// getTemporaryLink generates a temporary signed URL for the given object in the bucket.
+func getTemporaryLink(bucketName, objectKey string, expiration time.Duration) (string, error) {
+    err := godotenv.Load()
+    if err != nil {
+        log.Fatal("Error loading .env file")
+    }
+
+    cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+    if err != nil {
+        return "", err
+    }
+
+    // Define AWS credentials and bucket information
+    awsAccessKeyID := os.Getenv("LIARA_ACCESS_KEY")
+    awsSecretAccessKey := os.Getenv("LIARA_SECRET_KEY")
+    endpoint := os.Getenv("LIARA_ENDPOINT")
+
+    // Initialize S3 client with custom configuration
+    cfg.Credentials = aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+        return aws.Credentials{
+            AccessKeyID:     awsAccessKeyID,
+            SecretAccessKey: awsSecretAccessKey,
+        }, nil
+    })
+    cfg.BaseEndpoint = aws.String(endpoint)
+
+    client := s3.NewFromConfig(cfg)
+
+    // Generate a pre-signed URL for the object
+    presignClient := s3.NewPresignClient(client)
+    presignedReq, err := presignClient.PresignGetObject(context.TODO(), &s3.GetObjectInput{
+        Bucket: aws.String(bucketName),
+        Key:    aws.String(objectKey),
+    }, s3.WithPresignExpires(expiration))
+    if err != nil {
+        return "", err
+    }
+
+    return presignedReq.URL, nil
+}
+
+// listFiles lists all files in the specified bucket and prefix.
+func listFiles(bucketName, prefix string) ([]string, error) {
+    err := godotenv.Load()
+    if err != nil {
+        log.Fatal("Error loading .env file")
+    }
+
+    cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+    if err != nil {
+        return nil, err
+    }
+
+    // Define AWS credentials and bucket information
+    awsAccessKeyID := os.Getenv("LIARA_ACCESS_KEY")
+    awsSecretAccessKey := os.Getenv("LIARA_SECRET_KEY")
+    endpoint := os.Getenv("LIARA_ENDPOINT")
+
+    // Initialize S3 client with custom configuration
+    cfg.Credentials = aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+        return aws.Credentials{
+            AccessKeyID:     awsAccessKeyID,
+            SecretAccessKey: awsSecretAccessKey,
+        }, nil
+    })
+    cfg.BaseEndpoint = aws.String(endpoint)
+
+    client := s3.NewFromConfig(cfg)
+
+    // List objects in the bucket
+    result, err := client.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
+        Bucket: aws.String(bucketName),
+        Prefix: aws.String(prefix),
+    })
+    if err != nil {
+        return nil, err
+    }
+
+    var files []string
+    for _, item := range result.Contents {
+        files = append(files, aws.ToString(item.Key))
+    }
+
+    return files, nil
+}
+
+// deleteFile deletes a file from the specified bucket.
+func deleteFile(bucketName, objectKey string) error {
+    err := godotenv.Load()
+    if err != nil {
+        log.Fatal("Error loading .env file")
+    }
+
+    cfg, err := config.LoadDefaultConfig(context.TODO(), config.WithRegion("us-west-2"))
+    if err != nil {
+        return err
+    }
+
+    // Define AWS credentials and bucket information
+    awsAccessKeyID := os.Getenv("LIARA_ACCESS_KEY")
+    awsSecretAccessKey := os.Getenv("LIARA_SECRET_KEY")
+    endpoint := os.Getenv("LIARA_ENDPOINT")
+
+    // Initialize S3 client with custom configuration
+    cfg.Credentials = aws.CredentialsProviderFunc(func(ctx context.Context) (aws.Credentials, error) {
+        return aws.Credentials{
+            AccessKeyID:     awsAccessKeyID,
+            SecretAccessKey: awsSecretAccessKey,
+        }, nil
+    })
+    cfg.BaseEndpoint = aws.String(endpoint)
+
+    client := s3.NewFromConfig(cfg)
+
+    // Delete the object
+    _, err = client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+        Bucket: aws.String(bucketName),
+        Key:    aws.String(objectKey),
+    })
+    return err
+}
+
+func main() {
+    // Example usage of the functions
+
+    // Upload a file
+    fileContent := bytes.NewReader([]byte("Hello, World!"))
+    fileName := "example.txt"
+    permanentLink, err := uploadUsingS3(fileContent, fileName)
+    if err != nil {
+        log.Fatalf("Failed to upload file: %v", err)
+    }
+    fmt.Printf("File uploaded successfully. Permanent link: %s\n", permanentLink)
+
+    // Generate a temporary link (valid for 1 hour)
+    temporaryLink, err := getTemporaryLink(os.Getenv("LIARA_BUCKET_NAME"), "uploads/example.txt", time.Hour)
+    if err != nil {
+        log.Fatalf("Failed to generate temporary link: %v", err)
+    }
+    fmt.Printf("Temporary link (valid for 1 hour): %s\n", temporaryLink)
+
+    // List files in the bucket
+    files, err := listFiles(os.Getenv("LIARA_BUCKET_NAME"), "uploads/")
+    if err != nil {
+        log.Fatalf("Failed to list files: %v", err)
+    }
+    fmt.Println("Files in the bucket:")
+    for _, file := range files {
+        fmt.Println(file)
+    }
+
+    // Delete a file
+    err = deleteFile(os.Getenv("LIARA_BUCKET_NAME"), "uploads/example.txt")
+    if err != nil {
+        log.Fatalf("Failed to delete file: %v", err)
+    }
+    fmt.Println("File deleted successfully.")
+}`}
+    </Highlight>
+</div>
+<div className="h-2" />
+</Layout>
